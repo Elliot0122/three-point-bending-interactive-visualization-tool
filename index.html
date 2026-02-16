@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three Point Bending Data Visualization</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Landing Page -->
+    <div id="landing-page" class="page">
+        <div class="landing-container">
+            <p class="landing-status" id="status-label">Please select a text file</p>
+            <button class="btn-primary btn-large" id="upload-btn">Upload Text File</button>
+            <input type="file" id="file-input" accept=".txt,.TXT" hidden>
+        </div>
+    </div>
+
+    <!-- Visualization Page -->
+    <div id="viz-page" class="page hidden">
+        <div class="viz-container">
+            <!-- Left Panel -->
+            <div class="left-panel">
+                <p class="file-name" id="file-name-label"></p>
+
+                <label class="dropdown-label">X-Axis:</label>
+                <select id="x-combo" class="dropdown"></select>
+
+                <label class="dropdown-label">Y-Axis:</label>
+                <select id="y-combo" class="dropdown"></select>
+
+                <button class="btn-primary" id="select-file-btn">Select Another File</button>
+                <button class="btn-primary" id="reset-btn">Reset Points</button>
+                <button class="btn-export" id="export-btn">Export to CSV</button>
+            </div>
+
+            <!-- Right Panel (Chart) -->
+            <div class="right-panel">
+                <div id="chart"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

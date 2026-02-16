@@ -1,0 +1,208 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #f5f5f5;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.page {
+    width: 100%;
+    height: 100vh;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Landing Page */
+.landing-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 20px;
+}
+
+.landing-status {
+    font-size: 24px;
+    color: #333333;
+}
+
+/* Buttons */
+.btn-primary {
+    background-color: #007BFF;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-size: 14px;
+    padding: 10px 20px;
+    cursor: pointer;
+    width: 100%;
+    height: 40px;
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+}
+
+.btn-primary:active {
+    background-color: #004085;
+}
+
+.btn-large {
+    width: 300px;
+    height: 60px;
+    font-size: 20px;
+}
+
+.btn-export {
+    background-color: #1D6F42;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-size: 14px;
+    padding: 10px 20px;
+    cursor: pointer;
+    width: 100%;
+    height: 40px;
+}
+
+.btn-export:hover {
+    background-color: #14532D;
+}
+
+.btn-export:active {
+    background-color: #0D3520;
+}
+
+/* Visualization Page */
+.viz-container {
+    display: flex;
+    height: 100%;
+    padding: 20px;
+    gap: 20px;
+}
+
+.left-panel {
+    width: 250px;
+    min-width: 250px;
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.right-panel {
+    flex: 1;
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#chart {
+    width: 100%;
+    height: 100%;
+}
+
+.file-name {
+    font-size: 20px;
+    color: #333333;
+    font-weight: bold;
+    text-align: center;
+    word-break: break-all;
+}
+
+.dropdown-label {
+    font-size: 14px;
+    color: #333333;
+}
+
+.dropdown {
+    font-size: 13px;
+    padding: 5px 10px;
+    border: 1px solid #cccccc;
+    border-radius: 5px;
+    background-color: white;
+    height: 30px;
+    width: 100%;
+    outline: none;
+    cursor: pointer;
+}
+
+.dropdown:hover {
+    border-color: #999999;
+}
+
+.dropdown:focus {
+    border-color: #4CAF50;
+}
+
+/* Responsive: stack layout vertically on small screens */
+@media (max-width: 768px) {
+    body {
+        overflow: auto;
+    }
+
+    .page {
+        height: auto;
+        min-height: 100vh;
+    }
+
+    .landing-status {
+        font-size: 18px;
+    }
+
+    .btn-large {
+        width: 80%;
+        max-width: 300px;
+    }
+
+    .viz-container {
+        flex-direction: column;
+        height: auto;
+    }
+
+    .left-panel {
+        width: 100%;
+        min-width: unset;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .left-panel .file-name {
+        width: 100%;
+    }
+
+    .left-panel .dropdown-label,
+    .left-panel .dropdown {
+        width: auto;
+        flex: 1;
+        min-width: 120px;
+    }
+
+    .left-panel .btn-primary,
+    .left-panel .btn-export {
+        width: auto;
+        flex: 1;
+        min-width: 120px;
+    }
+
+    .right-panel {
+        min-height: 450px;
+    }
+}
