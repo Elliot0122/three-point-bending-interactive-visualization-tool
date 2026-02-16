@@ -588,6 +588,9 @@ class App {
             return best;
         };
 
+        // Lightweight DOM overlay for live coords/slope during drag (avoids heavy Plotly.relayout)
+        const dragOverlay = document.getElementById('drag-overlay');
+
         // Attach mousedown directly on the Plotly overlay element (capture phase)
         // so it fires before Plotly's own handlers
         const plotArea = getPlotArea();
@@ -596,6 +599,7 @@ class App {
                 const hit = hitTest(e);
                 if (hit !== null) {
                     this.draggingPoint = hit;
+                    if (dragOverlay) { dragOverlay.classList.add('visible'); }
                     e.stopImmediatePropagation();
                     e.preventDefault();
                 }
@@ -684,6 +688,8 @@ class App {
         // Mouseup on document
         document.addEventListener('mouseup', () => {
             if (this.draggingPoint !== null) {
+                if (dragOverlay) dragOverlay.classList.remove('visible');
+                this.syncAnnotations();
                 this.draggingPoint = null;
                 const overlay = getPlotArea();
                 if (overlay) overlay.style.cursor = '';
@@ -694,7 +700,7 @@ class App {
 
     moveInteractivePoint(x, y) {
         const chartDiv = document.getElementById('chart');
-        const annotations = chartDiv.layout.annotations.slice();
+        const dragOverlay = document.getElementById('drag-overlay');
 
         if (this.draggingPoint === 0 || this.draggingPoint === 1) {
             // Update blue slope point
@@ -710,47 +716,43 @@ class App {
             const xVals = [sp1[0], sp2[0]];
             const yVals = [sp1[1], sp2[1]];
 
-            // Batch update both traces (blue points + dashed line) in one call
+            // Plotly.restyle only - lightweight trace update; annotations via DOM overlay
             Plotly.restyle(chartDiv, {
                 x: [xVals, xVals],
                 y: [yVals, yVals]
             }, [2, 3]);
 
-            // Update annotations for blue points and slope
-            annotations[1] = {
-                ...annotations[1],
-                x: sp1[0], y: sp1[1],
-                text: `(${sp1[0].toFixed(4)}, ${sp1[1].toFixed(4)})`
-            };
-            annotations[2] = {
-                ...annotations[2],
-                x: sp2[0], y: sp2[1],
-                text: `(${sp2[0].toFixed(4)}, ${sp2[1].toFixed(4)})`
-            };
-            annotations[5] = {
-                ...annotations[5],
-                text: `Current Slope: ${this.processor.customSlope.toFixed(4)}`
-            };
-
-            Plotly.relayout(chartDiv, { annotations: annotations });
+            // Live feedback via DOM (cheap, no Plotly.relayout)
+            if (dragOverlay) {
+                const pt = this.draggingPoint === 0 ? sp1 : sp2;
+                dragOverlay.textContent = `(${pt[0].toFixed(4)}, ${pt[1].toFixed(4)})\nCurrent Slope: ${this.processor.customSlope.toFixed(4)}`;
+            }
 
         } else if (this.draggingPoint === 2) {
-            // Update green yield point
             this.processor.setYieldPoint(x, y);
-
             Plotly.restyle(chartDiv, {
                 x: [[x]],
                 y: [[y]]
             }, [5]);
 
-            annotations[3] = {
-                ...annotations[3],
-                x: x, y: y,
-                text: `(${x.toFixed(4)}, ${y.toFixed(4)})`
-            };
-
-            Plotly.relayout(chartDiv, { annotations: annotations });
+            if (dragOverlay) {
+                dragOverlay.textContent = `(${x.toFixed(4)}, ${y.toFixed(4)})`;
+            }
         }
+    }
+
+    syncAnnotations() {
+        const chartDiv = document.getElementById('chart');
+        const annotations = chartDiv.layout.annotations.slice();
+        const sp1 = this.processor.customSlopePointOne;
+        const sp2 = this.processor.customSlopePointTwo;
+
+        annotations[1] = { ...annotations[1], x: sp1[0], y: sp1[1], text: `(${sp1[0].toFixed(4)}, ${sp1[1].toFixed(4)})` };
+        annotations[2] = { ...annotations[2], x: sp2[0], y: sp2[1], text: `(${sp2[0].toFixed(4)}, ${sp2[1].toFixed(4)})` };
+        annotations[3] = { ...annotations[3], x: this.processor.yieldDisplacement, y: this.processor.yieldStrength, text: `(${this.processor.yieldDisplacement.toFixed(4)}, ${this.processor.yieldStrength.toFixed(4)})` };
+        annotations[5] = { ...annotations[5], text: `Current Slope: ${this.processor.customSlope.toFixed(4)}` };
+
+        Plotly.relayout(chartDiv, { annotations });
     }
 
     resetPoints() {
