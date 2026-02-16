@@ -625,7 +625,38 @@ class App {
             }
         };
 
+        // Build a sorted index for binary search snapping (O(log n) instead of O(n))
+        const xCol = document.getElementById('x-combo').value;
+        const yCol = document.getElementById('y-combo').value;
+        const xArr = this.processor.originalDf[xCol];
+        const yArr = this.processor.originalDf[yCol];
+        const sortedIndices = Array.from(xArr.keys()).sort((a, b) => xArr[a] - xArr[b]);
+
+        const findClosestPoint = (dataX) => {
+            let lo = 0, hi = sortedIndices.length - 1;
+            while (lo < hi) {
+                const mid = (lo + hi) >> 1;
+                if (xArr[sortedIndices[mid]] < dataX) lo = mid + 1;
+                else hi = mid;
+            }
+            // Check neighbors to find true closest
+            let bestIdx = sortedIndices[lo];
+            let bestDist = Math.abs(xArr[bestIdx] - dataX);
+            if (lo > 0) {
+                const prev = sortedIndices[lo - 1];
+                const d = Math.abs(xArr[prev] - dataX);
+                if (d < bestDist) { bestIdx = prev; bestDist = d; }
+            }
+            if (lo < sortedIndices.length - 1) {
+                const next = sortedIndices[lo + 1];
+                const d = Math.abs(xArr[next] - dataX);
+                if (d < bestDist) { bestIdx = next; }
+            }
+            return bestIdx;
+        };
+
         // Mousemove on document for dragging + cursor feedback + hover highlight
+        let dragRAF = null;
         document.addEventListener('mousemove', (e) => {
             const overlay = getPlotArea();
             // Cursor feedback - set on the Plotly overlay so it's not overridden
@@ -637,22 +668,17 @@ class App {
             }
 
             if (overlay) overlay.style.cursor = 'pointer';
-            const coords = eventToData(e);
-            if (!coords || isNaN(coords.dataX) || isNaN(coords.dataY)) return;
 
-            // Snap to closest data point
-            const xCol = document.getElementById('x-combo').value;
-            const yCol = document.getElementById('y-combo').value;
-            const xArr = this.processor.originalDf[xCol];
-            const yArr = this.processor.originalDf[yCol];
+            // Throttle drag updates to animation frame rate
+            if (dragRAF) return;
+            dragRAF = requestAnimationFrame(() => {
+                dragRAF = null;
+                const coords = eventToData(e);
+                if (!coords || isNaN(coords.dataX) || isNaN(coords.dataY)) return;
 
-            let closestIdx = 0, closestDist = Infinity;
-            for (let i = 0; i < xArr.length; i++) {
-                const dist = Math.abs(xArr[i] - coords.dataX);
-                if (dist < closestDist) { closestDist = dist; closestIdx = i; }
-            }
-
-            this.moveInteractivePoint(xArr[closestIdx], yArr[closestIdx]);
+                const closestIdx = findClosestPoint(coords.dataX);
+                this.moveInteractivePoint(xArr[closestIdx], yArr[closestIdx]);
+            });
         }, { signal });
 
         // Mouseup on document
@@ -681,21 +707,16 @@ class App {
 
             const sp1 = this.processor.customSlopePointOne;
             const sp2 = this.processor.customSlopePointTwo;
+            const xVals = [sp1[0], sp2[0]];
+            const yVals = [sp1[1], sp2[1]];
 
-            // Update blue points trace (trace index 3)
+            // Batch update both traces (blue points + dashed line) in one call
             Plotly.restyle(chartDiv, {
-                x: [[sp1[0], sp2[0]]],
-                y: [[sp1[1], sp2[1]]]
-            }, [3]);
-
-            // Update dashed line trace (trace index 2)
-            Plotly.restyle(chartDiv, {
-                x: [[sp1[0], sp2[0]]],
-                y: [[sp1[1], sp2[1]]]
-            }, [2]);
+                x: [xVals, xVals],
+                y: [yVals, yVals]
+            }, [2, 3]);
 
             // Update annotations for blue points and slope
-            // sp1 annotation is index 1, sp2 annotation is index 2
             annotations[1] = {
                 ...annotations[1],
                 x: sp1[0], y: sp1[1],
@@ -706,7 +727,6 @@ class App {
                 x: sp2[0], y: sp2[1],
                 text: `(${sp2[0].toFixed(4)}, ${sp2[1].toFixed(4)})`
             };
-            // Current slope annotation is index 5
             annotations[5] = {
                 ...annotations[5],
                 text: `Current Slope: ${this.processor.customSlope.toFixed(4)}`
@@ -723,7 +743,6 @@ class App {
                 y: [[y]]
             }, [5]);
 
-            // Yield annotation is index 3
             annotations[3] = {
                 ...annotations[3],
                 x: x, y: y,
