@@ -3,7 +3,9 @@ class DataProcessor {
     constructor() {
         this.rawData = null;
         this.fileName = null;
-        this.columns = ['Elapsed Time', 'Scan Time', 'Display 1', 'Load 1', 'Load 2'];
+        this.columns = ['Disp', 'Load', 'Axial cmd'];
+        this.isLoadCsvFormat = false; // true when file has Disp, Load, Axial cmd structure
+        this.loadCsvColumnIndices = null; // [dispIdx, loadIdx, axialIdx] in file order for canonical Disp, Load, Axial cmd
         this.originalDf = null;
         this.dfForAreaCalc = null;
         this.linePoints = null;
@@ -53,38 +55,101 @@ class DataProcessor {
 
     processFile(text, fileName) {
         this.fileName = fileName.split('.')[0];
-        // Normalize line endings and split (keep empty lines for correct indexing)
         let lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-        // Remove "Axial Counts" lines and skip first 5 lines (like Python code)
-        lines = lines.filter(l => l.substring(0, 12) !== 'Axial Counts');
-        this.rawData = lines.slice(5).filter(l => l.trim() !== '');
+
+        // Detect load.csv format: find a header line with "Disp" and "Load" (and optionally "Axial cmd") in first few lines
+        let parsedHeaders = null;
+        let dataStartIndex = -1;
+        for (let i = 0; i < Math.min(4, lines.length); i++) {
+            const line = (lines[i] || '').trim();
+            const parsed = this._parseQuotedCsvLine(line);
+            if (parsed.length < 2) continue;
+            const lower = parsed.map(h => (h || '').trim().toLowerCase());
+            const hasDisp = lower.some(h => h.includes('disp') || h.includes('extension') || h.includes('position') || h.includes('deflection'));
+            const hasLoad = lower.some(h => h.includes('load') || h.includes('force'));
+            if (hasDisp && hasLoad) {
+                parsedHeaders = parsed;
+                dataStartIndex = i + 2; // header line + units line, then data
+                break;
+            }
+        }
+
+        if (parsedHeaders && dataStartIndex >= 2) {
+            this.isLoadCsvFormat = true;
+            this.loadCsvColumnIndices = this._mapLoadCsvColumns(parsedHeaders);
+            this.columns = this.loadCsvColumnIndices.map(i => (parsedHeaders[i] || '').trim()).filter(Boolean);
+            this.rawData = lines.slice(dataStartIndex).filter(l => l.trim() !== '');
+        } else {
+            this.isLoadCsvFormat = false;
+            this.loadCsvColumnIndices = null;
+            this.columns = ['Disp', 'Load', 'Axial cmd'];
+            this.rawData = [];
+        }
     }
 
-    // Determine which load column to use: pick the one whose first element < 0
-    getPreferredLoadColumn() {
-        if (!this.rawData || this.rawData.length === 0) return 'Load 1';
-        const delimiter = this.rawData[0].includes(',') ? ',' : '\t';
-        const firstLine = this.rawData[0].split(delimiter).filter(x => x.trim() !== '').slice(1, 6);
-        if (firstLine.length >= 5) {
-            const load1First = parseFloat(firstLine[3]);
-            const load2First = parseFloat(firstLine[4]);
-            if (load1First < 0) return 'Load 1';
-            if (load2First < 0) return 'Load 2';
+    _mapLoadCsvColumns(parsedHeaders) {
+        const trimmed = parsedHeaders.map(h => (h || '').trim().toLowerCase());
+        let dispIdx = -1, loadIdx = -1, axialIdx = -1;
+        for (let i = 0; i < trimmed.length; i++) {
+            const h = trimmed[i];
+            if ((dispIdx < 0) && (h.includes('disp') || h.includes('extension') || h.includes('position') || h.includes('deflection'))) dispIdx = i;
+            else if ((loadIdx < 0) && (h.includes('load') || h.includes('force'))) loadIdx = i;
+            else if ((axialIdx < 0) && (h.includes('axial') || h.includes('cmd'))) axialIdx = i;
         }
-        return 'Load 1';
+        if (axialIdx < 0 && trimmed.length >= 3) axialIdx = trimmed.findIndex((_, i) => i !== dispIdx && i !== loadIdx);
+        if (dispIdx < 0) dispIdx = 0;
+        if (loadIdx < 0) loadIdx = 1;
+        if (axialIdx < 0) axialIdx = 2;
+        if (parsedHeaders.length === 2) return [dispIdx, loadIdx];
+        return [dispIdx, loadIdx, axialIdx];
+    }
+
+    _parseQuotedCsvLine(line) {
+        const result = [];
+        let i = 0;
+        while (i < line.length) {
+            const ch = line[i];
+            if (ch === '"') {
+                let end = line.indexOf('"', i + 1);
+                if (end === -1) end = line.length;
+                result.push(line.slice(i + 1, end).trim());
+                i = end + 1;
+            } else if (ch === ',') {
+                i++;
+            } else {
+                const nextComma = line.indexOf(',', i);
+                const end = nextComma === -1 ? line.length : nextComma;
+                const value = line.slice(i, end).trim().replace(/^"|"$/g, '');
+                if (value) result.push(value);
+                i = nextComma === -1 ? line.length : nextComma + 1;
+            }
+        }
+        return result;
+    }
+
+    getPreferredLoadColumn() {
+        return this.columns.includes('Load') ? 'Load' : (this.columns[1] || 'Load');
     }
 
     processData(xCol, yCol) {
-        const delimiter = this.rawData[0].includes(',') ? ',' : '\t';
+        if (!this.isLoadCsvFormat || !this.rawData || this.rawData.length === 0) {
+            this.originalDf = this.columns.reduce((acc, col) => ({ ...acc, [col]: [] }), {});
+            return;
+        }
+        const numCols = this.loadCsvColumnIndices ? Math.max(...this.loadCsvColumnIndices) + 1 : this.columns.length;
         const cleanData = this.rawData.map(line => {
-            const parts = line.split(delimiter).filter(x => x.trim() !== '').slice(1, 6);
-            return parts.map(v => parseFloat(v.trim()));
-        }).filter(row => row.length === 5 && row.every(v => !isNaN(v)));
+            const parts = line.split(',').map(p => p.trim().replace(/^"|"$/g, '')).filter(p => p !== '');
+            if (parts.length < numCols) return null;
+            const nums = parts.slice(0, numCols).map(v => parseFloat(v));
+            return nums.every(v => !isNaN(v)) ? nums : null;
+        }).filter(row => row !== null);
 
-        // Build arrays per column
+        // Build arrays per column (use loadCsvColumnIndices when present so column order in file doesn't matter)
         const data = {};
+        const indices = this.loadCsvColumnIndices;
         this.columns.forEach((col, i) => {
-            data[col] = cleanData.map(row => row[i]);
+            const colIdx = indices ? indices[i] : i;
+            data[col] = cleanData.map(row => row[colIdx]);
         });
         this.originalDf = data;
 
@@ -259,6 +324,7 @@ class App {
         this.processor = new DataProcessor();
         this.draggingPoint = null; // 0, 1, 2 or null
         this.exportData = [];
+        this.exportFileHandle = null; // File System Access API handle for "same file" writes
         this.bindEvents();
     }
 
@@ -300,17 +366,17 @@ class App {
 
         const xCombo = document.getElementById('x-combo');
         const yCombo = document.getElementById('y-combo');
+        const cols = this.processor.columns;
         xCombo.innerHTML = '';
         yCombo.innerHTML = '';
-        this.processor.columns.forEach(col => {
+        cols.forEach(col => {
             xCombo.innerHTML += `<option value="${col}">${col}</option>`;
             yCombo.innerHTML += `<option value="${col}">${col}</option>`;
         });
-        xCombo.value = 'Display 1';
-
-        // Change: auto-select Load column where first element < 0
-        const preferredLoad = this.processor.getPreferredLoadColumn();
-        yCombo.value = preferredLoad;
+        const defaultX = cols.includes('Disp') ? 'Disp' : cols[0];
+        const defaultY = cols.includes('Load') ? 'Load' : (cols.length > 1 ? cols[1] : cols[0]);
+        xCombo.value = cols.includes(defaultX) ? defaultX : cols[0];
+        yCombo.value = cols.includes(defaultY) ? defaultY : (cols.length > 1 ? cols[1] : cols[0]);
 
         // Remove old listeners and add new
         xCombo.onchange = () => this.updatePlot();
@@ -483,13 +549,13 @@ class App {
 
         const layout = {
             xaxis: {
-                title: yCol,
+                title: xCol,
                 gridcolor: '#e0e0e0',
                 gridwidth: 1,
                 zeroline: false
             },
             yaxis: {
-                title: xCol,
+                title: yCol,
                 gridcolor: '#e0e0e0',
                 gridwidth: 1,
                 zeroline: false
@@ -780,7 +846,9 @@ class App {
         Plotly.relayout(chartDiv, { annotations: annotations });
     }
 
-    exportToCSV() {
+    async exportToCSV() {
+        const EXPORT_FILENAME = 'mechanical property.csv';
+
         const row = {
             'file name': this.processor.fileName,
             'slope': this.processor.customSlope,
@@ -798,10 +866,30 @@ class App {
         });
 
         const blob = new Blob([csv], { type: 'text/csv' });
+        const trySaveToSameFile = typeof window.showSaveFilePicker === 'function';
+
+        if (trySaveToSameFile) {
+            try {
+                if (!this.exportFileHandle) {
+                    this.exportFileHandle = await window.showSaveFilePicker({
+                        suggestedName: EXPORT_FILENAME,
+                        types: [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }]
+                    });
+                }
+                const writable = await this.exportFileHandle.createWritable();
+                await writable.write(csv);
+                await writable.close();
+                return;
+            } catch (err) {
+                if (err.name === 'AbortError') return;
+                this.exportFileHandle = null;
+            }
+        }
+
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'mechanical property.csv';
+        a.download = EXPORT_FILENAME;
         a.click();
         URL.revokeObjectURL(url);
     }
