@@ -35,7 +35,10 @@
                 <button class="btn-export" id="export-btn">Export to Individual File</button>
 
                 <label class="dropdown-label" for="append-file-path">Append to file:</label>
-                <input type="text" id="append-file-path" class="file-path-input" placeholder="mechanical property.csv">
+                <div class="file-path-row">
+                    <input type="text" id="append-file-path" class="file-path-input" placeholder="Choose a file..." readonly>
+                    <button type="button" class="btn-browse" id="append-browse-btn">Browse</button>
+                </div>
                 <button class="btn-export" id="append-btn">Append to Same File</button>
             </div>
 

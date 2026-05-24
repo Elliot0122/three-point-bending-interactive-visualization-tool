@@ -196,6 +196,38 @@ body {
     box-sizing: border-box;
 }
 
+.file-path-row {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+
+.file-path-row .file-path-input {
+    flex: 1;
+    min-width: 0;
+}
+
+.btn-browse {
+    background-color: #007BFF;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-size: 13px;
+    padding: 0 12px;
+    height: 30px;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.btn-browse:hover {
+    background-color: #0056B3;
+}
+
+.btn-browse:active {
+    background-color: #004085;
+}
+
 .file-path-input:hover {
     border-color: #999999;
 }
@@ -243,14 +275,19 @@ body {
 
     .left-panel .dropdown-label,
     .left-panel .dropdown,
-    .left-panel .file-path-input {
+    .left-panel .file-path-row {
         width: auto;
         flex: 1;
         min-width: 120px;
     }
 
+    .left-panel .file-path-input {
+        width: auto;
+    }
+
     .left-panel .btn-primary,
-    .left-panel .btn-export {
+    .left-panel .btn-export,
+    .left-panel .btn-browse {
         width: auto;
         flex: 1;
         min-width: 120px;

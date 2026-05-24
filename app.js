@@ -358,15 +358,48 @@ class App {
         document.getElementById('reset-btn').addEventListener('click', () => this.resetPoints());
         document.getElementById('export-btn').addEventListener('click', () => this.exportToCSV());
         document.getElementById('append-btn').addEventListener('click', () => this.appendToCSV());
-        document.getElementById('append-file-path').addEventListener('input', () => {
-            this.appendFileHandle = null;
-        });
+        document.getElementById('append-browse-btn').addEventListener('click', () => this.browseAppendFile());
     }
 
     restoreAppendFilePath() {
         const savedPath = localStorage.getItem('appendFilePath');
         if (savedPath) {
             document.getElementById('append-file-path').value = savedPath;
+        }
+    }
+
+    setAppendFileHandle(handle) {
+        this.appendFileHandle = handle;
+        document.getElementById('append-file-path').value = handle.name;
+        localStorage.setItem('appendFilePath', handle.name);
+    }
+
+    async browseAppendFile() {
+        const csvTypes = [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }];
+
+        try {
+            let handle;
+            if (typeof window.showOpenFilePicker === 'function') {
+                [handle] = await window.showOpenFilePicker({
+                    mode: 'readwrite',
+                    types: csvTypes
+                });
+            } else if (typeof window.showSaveFilePicker === 'function') {
+                handle = await window.showSaveFilePicker({
+                    suggestedName: this.normalizeAppendFilename(
+                        document.getElementById('append-file-path').value
+                    ),
+                    types: csvTypes
+                });
+            } else {
+                alert('Choosing a file requires a browser with the File System Access API (Chrome or Edge).');
+                return;
+            }
+
+            this.setAppendFileHandle(handle);
+        } catch (err) {
+            if (err.name === 'AbortError') return;
+            alert('Failed to select file: ' + err.message);
         }
     }
 
@@ -1057,8 +1090,7 @@ class App {
         try {
             if (!this.appendFileHandle) {
                 this.appendFileHandle = await this.acquireAppendFileHandle(requestedName);
-                pathInput.value = this.appendFileHandle.name;
-                localStorage.setItem('appendFilePath', this.appendFileHandle.name);
+                this.setAppendFileHandle(this.appendFileHandle);
             }
 
             const existingContent = await this.readAppendTargetContent(this.appendFileHandle);
