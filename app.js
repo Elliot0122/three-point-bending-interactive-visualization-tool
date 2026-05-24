@@ -1,3 +1,20 @@
+// ==================== Display Helpers ====================
+const MAX_DISPLAY_POINTS = 3000;
+
+function downsampleForDisplay(xData, yData, maxPoints = MAX_DISPLAY_POINTS) {
+    if (xData.length <= maxPoints) {
+        return { x: xData, y: yData };
+    }
+    const step = Math.ceil(xData.length / maxPoints);
+    const x = [];
+    const y = [];
+    for (let i = 0; i < xData.length; i += step) {
+        x.push(xData[i]);
+        y.push(yData[i]);
+    }
+    return { x, y };
+}
+
 // ==================== Data Processor ====================
 class DataProcessor {
     constructor() {
@@ -325,7 +342,9 @@ class App {
         this.draggingPoint = null; // 0, 1, 2 or null
         this.exportData = [];
         this.exportFileHandle = null; // File System Access API handle for "same file" writes
+        this.appendFileHandle = null;
         this.bindEvents();
+        this.restoreAppendFilePath();
     }
 
     bindEvents() {
@@ -338,6 +357,28 @@ class App {
         });
         document.getElementById('reset-btn').addEventListener('click', () => this.resetPoints());
         document.getElementById('export-btn').addEventListener('click', () => this.exportToCSV());
+        document.getElementById('append-btn').addEventListener('click', () => this.appendToCSV());
+        document.getElementById('append-file-path').addEventListener('input', () => {
+            this.appendFileHandle = null;
+        });
+    }
+
+    restoreAppendFilePath() {
+        const savedPath = localStorage.getItem('appendFilePath');
+        if (savedPath) {
+            document.getElementById('append-file-path').value = savedPath;
+        }
+    }
+
+    buildExportRow() {
+        return {
+            'file name': this.processor.fileName,
+            'slope': this.processor.customSlope,
+            'area': this.processor.areaUnderCurve,
+            'yield displacement': this.processor.yieldDisplacement,
+            'yield strength': this.processor.yieldStrength,
+            'max strength': this.processor.maxValue
+        };
     }
 
     handleFile(e) {
@@ -392,13 +433,14 @@ class App {
 
         const xData = this.processor.originalDf[xCol];
         const yData = this.processor.originalDf[yCol];
+        const displayData = downsampleForDisplay(xData, yData);
 
-        // Main scatter trace
+        // Main scatter trace (WebGL + downsampled for large datasets)
         const scatterTrace = {
-            x: xData,
-            y: yData,
+            x: displayData.x,
+            y: displayData.y,
             mode: 'markers',
-            type: 'scatter',
+            type: 'scattergl',
             marker: { color: '#1f77b4', size: 4, opacity: 0.5 },
             name: 'Data',
             hoverinfo: 'x+y'
@@ -590,9 +632,96 @@ class App {
         this.setupDragInteraction();
     }
 
+    syncDragPreviewLayout() {
+        const chartDiv = document.getElementById('chart');
+        const svg = document.getElementById('drag-preview');
+        const plotArea = chartDiv.querySelector('.nsewdrag');
+        const container = chartDiv.parentElement;
+        if (!svg || !plotArea || !container) return;
+
+        const rect = plotArea.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        svg.style.left = `${rect.left - containerRect.left}px`;
+        svg.style.top = `${rect.top - containerRect.top}px`;
+        svg.style.width = `${rect.width}px`;
+        svg.style.height = `${rect.height}px`;
+        svg.setAttribute('viewBox', `0 0 ${rect.width} ${rect.height}`);
+    }
+
+    renderDragPreview() {
+        const ctx = this._dragCtx;
+        const svg = document.getElementById('drag-preview');
+        if (!ctx || !svg) return;
+
+        this.syncDragPreviewLayout();
+        svg.classList.add('visible');
+
+        const sp1 = this.processor.customSlopePointOne;
+        const sp2 = this.processor.customSlopePointTwo;
+        const yx = this.processor.yieldDisplacement;
+        const yy = this.processor.yieldStrength;
+        const p1 = ctx.dataToPx(sp1[0], sp1[1]);
+        const p2 = ctx.dataToPx(sp2[0], sp2[1]);
+        const py = ctx.dataToPx(yx, yy);
+
+        let html = '';
+        if (this.draggingPoint === 0 || this.draggingPoint === 1) {
+            if (p1 && p2) {
+                html += `<line x1="${p1.px}" y1="${p1.py}" x2="${p2.px}" y2="${p2.py}" stroke="blue" stroke-width="1" stroke-dasharray="4 3"/>`;
+                html += `<circle cx="${p1.px}" cy="${p1.py}" r="9" fill="blue" stroke="white" stroke-width="1"/>`;
+                html += `<circle cx="${p2.px}" cy="${p2.py}" r="9" fill="blue" stroke="white" stroke-width="1"/>`;
+            }
+        } else if (this.draggingPoint === 2 && py) {
+            html += `<circle cx="${py.px}" cy="${py.py}" r="9" fill="green" stroke="white" stroke-width="1"/>`;
+        }
+        svg.innerHTML = html;
+    }
+
+    clearDragPreview() {
+        const svg = document.getElementById('drag-preview');
+        if (!svg) return;
+        svg.innerHTML = '';
+        svg.classList.remove('visible');
+    }
+
+    hideInteractiveTracesForDrag() {
+        const chartDiv = document.getElementById('chart');
+        if (this.draggingPoint === 2) {
+            Plotly.restyle(chartDiv, { 'marker.size': [0] }, [5]);
+            return;
+        }
+        Plotly.restyle(chartDiv, { 'marker.size': [0, 0] }, [3]);
+        Plotly.restyle(chartDiv, { opacity: 0 }, [2]);
+    }
+
+    syncInteractiveTracesToPlotly() {
+        const chartDiv = document.getElementById('chart');
+        const sp1 = this.processor.customSlopePointOne;
+        const sp2 = this.processor.customSlopePointTwo;
+        const xVals = [sp1[0], sp2[0]];
+        const yVals = [sp1[1], sp2[1]];
+
+        Plotly.restyle(chartDiv, {
+            x: [xVals],
+            y: [yVals],
+            opacity: 1
+        }, [2]);
+        Plotly.restyle(chartDiv, {
+            x: [xVals],
+            y: [yVals],
+            'marker.size': [12, 12]
+        }, [3]);
+        Plotly.restyle(chartDiv, {
+            x: [[this.processor.yieldDisplacement]],
+            y: [[this.processor.yieldStrength]],
+            'marker.size': [12]
+        }, [5]);
+    }
+
     setupDragInteraction() {
         const chartDiv = document.getElementById('chart');
         this.draggingPoint = null;
+        this._lastDragSnapIdx = null;
 
         // Clean up previous listeners
         if (this._dragAbort) this._dragAbort.abort();
@@ -654,48 +783,6 @@ class App {
             return best;
         };
 
-        // Lightweight DOM overlay for live coords/slope during drag (avoids heavy Plotly.relayout)
-        const dragOverlay = document.getElementById('drag-overlay');
-
-        // Attach mousedown directly on the Plotly overlay element (capture phase)
-        // so it fires before Plotly's own handlers
-        const plotArea = getPlotArea();
-        if (plotArea) {
-            plotArea.addEventListener('mousedown', (e) => {
-                const hit = hitTest(e);
-                if (hit !== null) {
-                    this.draggingPoint = hit;
-                    if (dragOverlay) { dragOverlay.classList.add('visible'); }
-                    e.stopImmediatePropagation();
-                    e.preventDefault();
-                }
-            }, { capture: true, signal });
-        }
-
-        // Track which point is currently highlighted to avoid redundant restyles
-        let hoveredPoint = null;
-
-        const highlightPoint = (idx) => {
-            if (hoveredPoint === idx) return;
-            // Reset previous highlight
-            if (hoveredPoint !== null) {
-                const traceIdx = hoveredPoint < 2 ? 3 : 5;
-                Plotly.restyle(chartDiv, { 'marker.size': [12] }, [traceIdx]);
-            }
-            hoveredPoint = idx;
-            // Apply new highlight
-            if (idx !== null) {
-                const traceIdx = idx < 2 ? 3 : 5;
-                if (traceIdx === 3) {
-                    // Two points in this trace - enlarge both for simplicity
-                    Plotly.restyle(chartDiv, { 'marker.size': [18] }, [traceIdx]);
-                } else {
-                    Plotly.restyle(chartDiv, { 'marker.size': [18] }, [traceIdx]);
-                }
-            }
-        };
-
-        // Build a sorted index for binary search snapping (O(log n) instead of O(n))
         const xCol = document.getElementById('x-combo').value;
         const yCol = document.getElementById('y-combo').value;
         const xArr = this.processor.originalDf[xCol];
@@ -709,7 +796,6 @@ class App {
                 if (xArr[sortedIndices[mid]] < dataX) lo = mid + 1;
                 else hi = mid;
             }
-            // Check neighbors to find true closest
             let bestIdx = sortedIndices[lo];
             let bestDist = Math.abs(xArr[bestIdx] - dataX);
             if (lo > 0) {
@@ -725,15 +811,36 @@ class App {
             return bestIdx;
         };
 
-        // Mousemove on document for dragging + cursor feedback + hover highlight
+        this._dragCtx = { dataToPx, eventToData, findClosestPoint, xArr, yArr };
+
+        // Lightweight DOM overlay for live coords/slope during drag (avoids heavy Plotly.relayout)
+        const dragOverlay = document.getElementById('drag-overlay');
+
+        // Attach mousedown directly on the Plotly overlay element (capture phase)
+        // so it fires before Plotly's own handlers
+        const plotArea = getPlotArea();
+        if (plotArea) {
+            plotArea.addEventListener('mousedown', (e) => {
+                const hit = hitTest(e);
+                if (hit !== null) {
+                    this.draggingPoint = hit;
+                    this._lastDragSnapIdx = null;
+                    if (dragOverlay) dragOverlay.classList.add('visible');
+                    this.hideInteractiveTracesForDrag();
+                    this.renderDragPreview();
+                    e.stopImmediatePropagation();
+                    e.preventDefault();
+                }
+            }, { capture: true, signal });
+        }
+
+        // Mousemove on document for dragging + cursor feedback
         let dragRAF = null;
         document.addEventListener('mousemove', (e) => {
             const overlay = getPlotArea();
-            // Cursor feedback - set on the Plotly overlay so it's not overridden
             if (this.draggingPoint === null) {
                 const hit = hitTest(e);
                 if (overlay) overlay.style.cursor = hit !== null ? 'pointer' : '';
-                highlightPoint(hit);
                 return;
             }
 
@@ -747,7 +854,9 @@ class App {
                 if (!coords || isNaN(coords.dataX) || isNaN(coords.dataY)) return;
 
                 const closestIdx = findClosestPoint(coords.dataX);
-                this.moveInteractivePoint(xArr[closestIdx], yArr[closestIdx]);
+                if (closestIdx === this._lastDragSnapIdx) return;
+                this._lastDragSnapIdx = closestIdx;
+                this.moveInteractivePoint(xArr[closestIdx], yArr[closestIdx], true);
             });
         }, { signal });
 
@@ -755,21 +864,21 @@ class App {
         document.addEventListener('mouseup', () => {
             if (this.draggingPoint !== null) {
                 if (dragOverlay) dragOverlay.classList.remove('visible');
+                this.clearDragPreview();
+                this.syncInteractiveTracesToPlotly();
                 this.syncAnnotations();
                 this.draggingPoint = null;
+                this._lastDragSnapIdx = null;
                 const overlay = getPlotArea();
                 if (overlay) overlay.style.cursor = '';
-                highlightPoint(null);
             }
         }, { signal });
     }
 
-    moveInteractivePoint(x, y) {
-        const chartDiv = document.getElementById('chart');
+    moveInteractivePoint(x, y, previewOnly = false) {
         const dragOverlay = document.getElementById('drag-overlay');
 
         if (this.draggingPoint === 0 || this.draggingPoint === 1) {
-            // Update blue slope point
             if (this.draggingPoint === 0) {
                 this.processor.setCustomSlopePointOne(x, y);
             } else {
@@ -779,16 +888,19 @@ class App {
 
             const sp1 = this.processor.customSlopePointOne;
             const sp2 = this.processor.customSlopePointTwo;
-            const xVals = [sp1[0], sp2[0]];
-            const yVals = [sp1[1], sp2[1]];
 
-            // Plotly.restyle only - lightweight trace update; annotations via DOM overlay
-            Plotly.restyle(chartDiv, {
-                x: [xVals, xVals],
-                y: [yVals, yVals]
-            }, [2, 3]);
+            if (previewOnly) {
+                this.renderDragPreview();
+            } else {
+                const chartDiv = document.getElementById('chart');
+                const xVals = [sp1[0], sp2[0]];
+                const yVals = [sp1[1], sp2[1]];
+                Plotly.restyle(chartDiv, {
+                    x: [xVals, xVals],
+                    y: [yVals, yVals]
+                }, [2, 3]);
+            }
 
-            // Live feedback via DOM (cheap, no Plotly.relayout)
             if (dragOverlay) {
                 const pt = this.draggingPoint === 0 ? sp1 : sp2;
                 dragOverlay.textContent = `(${pt[0].toFixed(4)}, ${pt[1].toFixed(4)})\nCurrent Slope: ${this.processor.customSlope.toFixed(4)}`;
@@ -796,10 +908,16 @@ class App {
 
         } else if (this.draggingPoint === 2) {
             this.processor.setYieldPoint(x, y);
-            Plotly.restyle(chartDiv, {
-                x: [[x]],
-                y: [[y]]
-            }, [5]);
+
+            if (previewOnly) {
+                this.renderDragPreview();
+            } else {
+                const chartDiv = document.getElementById('chart');
+                Plotly.restyle(chartDiv, {
+                    x: [[x]],
+                    y: [[y]]
+                }, [5]);
+            }
 
             if (dragOverlay) {
                 dragOverlay.textContent = `(${x.toFixed(4)}, ${y.toFixed(4)})`;
@@ -849,14 +967,7 @@ class App {
     async exportToCSV() {
         const EXPORT_FILENAME = 'mechanical property.csv';
 
-        const row = {
-            'file name': this.processor.fileName,
-            'slope': this.processor.customSlope,
-            'area': this.processor.areaUnderCurve,
-            'yield displacement': this.processor.yieldDisplacement,
-            'yield strength': this.processor.yieldStrength,
-            'max strength': this.processor.maxValue
-        };
+        const row = this.buildExportRow();
         this.exportData.push(row);
 
         const headers = Object.keys(row);
@@ -892,6 +1003,48 @@ class App {
         a.download = EXPORT_FILENAME;
         a.click();
         URL.revokeObjectURL(url);
+    }
+
+    async appendToCSV() {
+        const pathInput = document.getElementById('append-file-path');
+
+        if (typeof window.showOpenFilePicker !== 'function') {
+            alert('Append to file requires a browser with the File System Access API (Chrome or Edge).');
+            return;
+        }
+
+        const row = this.buildExportRow();
+        const headers = Object.keys(row);
+        const line = headers.map(h => row[h]).join(',');
+
+        try {
+            if (!this.appendFileHandle) {
+                [this.appendFileHandle] = await window.showOpenFilePicker({
+                    mode: 'readwrite',
+                    types: [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }]
+                });
+                pathInput.value = this.appendFileHandle.name;
+                localStorage.setItem('appendFilePath', this.appendFileHandle.name);
+            }
+
+            const file = await this.appendFileHandle.getFile();
+            let content = await file.text();
+
+            if (!content.trim()) {
+                content = headers.join(',') + '\n';
+            } else if (!content.endsWith('\n')) {
+                content += '\n';
+            }
+            content += line + '\n';
+
+            const writable = await this.appendFileHandle.createWritable();
+            await writable.write(content);
+            await writable.close();
+        } catch (err) {
+            if (err.name === 'AbortError') return;
+            this.appendFileHandle = null;
+            alert('Failed to append to file: ' + err.message);
+        }
     }
 }
 

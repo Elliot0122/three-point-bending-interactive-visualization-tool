@@ -134,6 +134,18 @@ body {
     display: block;
 }
 
+.drag-preview {
+    position: absolute;
+    pointer-events: none;
+    z-index: 5;
+    display: none;
+    overflow: visible;
+}
+
+.drag-preview.visible {
+    display: block;
+}
+
 #chart {
     width: 100%;
     height: 100%;
@@ -170,6 +182,38 @@ body {
 
 .dropdown:focus {
     border-color: #4CAF50;
+}
+
+.file-path-input {
+    font-size: 13px;
+    padding: 5px 10px;
+    border: 1px solid #cccccc;
+    border-radius: 5px;
+    background-color: white;
+    height: 30px;
+    width: 100%;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.file-path-input:hover {
+    border-color: #999999;
+}
+
+.file-path-input:focus {
+    border-color: #4CAF50;
+}
+
+.btn-append {
+    background-color: #2563EB;
+}
+
+.btn-append:hover {
+    background-color: #1D4ED8;
+}
+
+.btn-append:active {
+    background-color: #1E40AF;
 }
 
 /* Responsive: stack layout vertically on small screens */
@@ -210,7 +254,8 @@ body {
     }
 
     .left-panel .dropdown-label,
-    .left-panel .dropdown {
+    .left-panel .dropdown,
+    .left-panel .file-path-input {
         width: auto;
         flex: 1;
         min-width: 120px;
