@@ -204,18 +204,6 @@ body {
     border-color: #4CAF50;
 }
 
-.btn-append {
-    background-color: #2563EB;
-}
-
-.btn-append:hover {
-    background-color: #1D4ED8;
-}
-
-.btn-append:active {
-    background-color: #1E40AF;
-}
-
 /* Responsive: stack layout vertically on small screens */
 @media (max-width: 768px) {
     body {

@@ -370,6 +370,42 @@ class App {
         }
     }
 
+    normalizeAppendFilename(name) {
+        const DEFAULT_FILENAME = 'mechanical property.csv';
+        const trimmed = (name || '').trim() || DEFAULT_FILENAME;
+        return /\.csv$/i.test(trimmed) ? trimmed : `${trimmed}.csv`;
+    }
+
+    async readAppendTargetContent(fileHandle) {
+        try {
+            const file = await fileHandle.getFile();
+            return await file.text();
+        } catch {
+            return '';
+        }
+    }
+
+    buildCsvAppendContent(existingContent, headers, line) {
+        let content = existingContent;
+        if (!content.trim()) {
+            content = headers.join(',') + '\n';
+        } else if (!content.endsWith('\n')) {
+            content += '\n';
+        }
+        return content + line + '\n';
+    }
+
+    async acquireAppendFileHandle(requestedName) {
+        if (typeof window.showSaveFilePicker !== 'function') {
+            throw new Error('File System Access API is not available in this browser.');
+        }
+
+        return window.showSaveFilePicker({
+            suggestedName: requestedName,
+            types: [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }]
+        });
+    }
+
     buildExportRow() {
         return {
             'file name': this.processor.fileName,
@@ -1007,8 +1043,9 @@ class App {
 
     async appendToCSV() {
         const pathInput = document.getElementById('append-file-path');
+        const requestedName = this.normalizeAppendFilename(pathInput.value);
 
-        if (typeof window.showOpenFilePicker !== 'function') {
+        if (typeof window.showSaveFilePicker !== 'function') {
             alert('Append to file requires a browser with the File System Access API (Chrome or Edge).');
             return;
         }
@@ -1019,23 +1056,13 @@ class App {
 
         try {
             if (!this.appendFileHandle) {
-                [this.appendFileHandle] = await window.showOpenFilePicker({
-                    mode: 'readwrite',
-                    types: [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }]
-                });
+                this.appendFileHandle = await this.acquireAppendFileHandle(requestedName);
                 pathInput.value = this.appendFileHandle.name;
                 localStorage.setItem('appendFilePath', this.appendFileHandle.name);
             }
 
-            const file = await this.appendFileHandle.getFile();
-            let content = await file.text();
-
-            if (!content.trim()) {
-                content = headers.join(',') + '\n';
-            } else if (!content.endsWith('\n')) {
-                content += '\n';
-            }
-            content += line + '\n';
+            const existingContent = await this.readAppendTargetContent(this.appendFileHandle);
+            const content = this.buildCsvAppendContent(existingContent, headers, line);
 
             const writable = await this.appendFileHandle.createWritable();
             await writable.write(content);
