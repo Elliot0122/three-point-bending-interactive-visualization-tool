@@ -343,6 +343,7 @@ class App {
         this.exportData = [];
         this.exportFileHandle = null; // File System Access API handle for "same file" writes
         this.appendFileHandle = null;
+        this.saveToastTimeout = null;
         this.bindEvents();
         this.restoreAppendFilePath();
     }
@@ -372,6 +373,21 @@ class App {
         this.appendFileHandle = handle;
         document.getElementById('append-file-path').value = handle.name;
         localStorage.setItem('appendFilePath', handle.name);
+    }
+
+    showSaveToast(message = 'Saved successfully.') {
+        const toast = document.getElementById('save-toast');
+        if (!toast) return;
+
+        window.clearTimeout(this.saveToastTimeout);
+        toast.textContent = message;
+        toast.classList.remove('visible');
+        void toast.offsetWidth;
+        toast.classList.add('visible');
+
+        this.saveToastTimeout = window.setTimeout(() => {
+            toast.classList.remove('visible');
+        }, 1800);
     }
 
     async browseAppendFile() {
@@ -1059,6 +1075,7 @@ class App {
                 const writable = await this.exportFileHandle.createWritable();
                 await writable.write(csv);
                 await writable.close();
+                this.showSaveToast('Saved to file.');
                 return;
             } catch (err) {
                 if (err.name === 'AbortError') return;
@@ -1072,6 +1089,7 @@ class App {
         a.download = EXPORT_FILENAME;
         a.click();
         URL.revokeObjectURL(url);
+        this.showSaveToast('Saved to file.');
     }
 
     async appendToCSV() {
@@ -1099,6 +1117,7 @@ class App {
             const writable = await this.appendFileHandle.createWritable();
             await writable.write(content);
             await writable.close();
+            this.showSaveToast('Saved to file.');
         } catch (err) {
             if (err.name === 'AbortError') return;
             this.appendFileHandle = null;
